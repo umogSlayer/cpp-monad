@@ -355,6 +355,10 @@ struct FunctionalTraits<std::optional> final
         requires is_instance_v<std::optional, Input>
     static constexpr auto join(std::optional<Input> &&input)
     {
+        if (!input)
+        {
+            return Input{};
+        }
         return std::move(*input);
     }
 
@@ -362,6 +366,10 @@ struct FunctionalTraits<std::optional> final
         requires is_instance_v<std::optional, Input>
     static constexpr auto join(const std::optional<Input> &input)
     {
+        if (!input)
+        {
+            return Input{};
+        }
         return *input;
     }
 };
