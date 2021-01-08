@@ -143,15 +143,9 @@ constexpr auto fbind(Func &&func, const T<Input> &input)
 }
 
 template<typename T, typename Func>
-constexpr auto operator>>=(T &&value, Func &&func)
+constexpr auto operator>>(T &&value, Func &&func)
 {
     return fbind(std::forward<Func>(func), std::forward<T>(value));
-}
-
-template<typename ...Args>
-constexpr auto chain_m(Args &&...args)
-{
-    return (... >>= std::forward<Args>(args));
 }
 
 } // namespace functional
@@ -274,16 +268,14 @@ void monad_test() {
     using functional::fjoin;
     using functional::fbind;
     using functional::fpure;
-    using functional::operator>>=;
-    using functional::chain_m;
+    using functional::operator>>;
     std::cout << "Monad (" << typeid(Monad<int>).name() << ")\n";
     std::cout << "\tjoin: " << fpure<Monad>(fpure<Monad>(15)) << " -> " << fjoin(fpure<Monad>(fpure<Monad>(15))) << '\n';
     std::cout << "\tbind: " << fbind([] (int val) { return Monad{val * 0.5}; }, fpure<Monad>(15)) << '\n';
-    std::cout << "\tbind(operator): " << (fpure<Monad>(15) >>= [] (int val) { return Monad{val * 0.5}; }) << '\n';
-    const auto chain_result = chain_m(
-            fpure<Monad>(15),
-            [] (auto val) { return fpure<Monad>(val * 0.5); },
-            [] (auto val) { return fpure<Monad>(static_cast<int>(val)); });
+    std::cout << "\tbind(operator): " << (fpure<Monad>(15) >> [] (int val) { return Monad{val * 0.5}; }) << '\n';
+    const auto chain_result = fpure<Monad>(15)
+            >> [] (auto val) { return fpure<Monad>(val * 0.5); }
+            >> [] (auto val) { return fpure<Monad>(static_cast<int>(val)); };
     std::cout << "\tchain: " << chain_result << '\n';
 }
 
