@@ -9,148 +9,55 @@
 #include <ranges>
 #include <concepts>
 
+#include "functional_monad.hpp"
+#include "functional_optional.hpp"
+
 namespace functional
 {
 
-template<template<typename> typename T, typename T2>
-struct is_instance final : public std::false_type {};
-
-template<template<typename> typename T, typename T2>
-struct is_instance<T, T<T2>> final : public std::true_type {};
-
-template<template<typename> typename T, typename T2>
-constexpr bool is_instance_v = is_instance<T, std::remove_cvref_t<T2>>::value;
-
-template<template<typename> typename T>
-struct FunctionalTraits final
+#if 0
+template<typename T>
+class PartiallyApplicable : public T
 {
-    template<typename Func, typename Input>
-    static constexpr auto map(Func &&func, T<Input> &&input)
+public:
+    constexpr PartiallyApplicable(T &&t)
+        : T(std::move(t))
     {
-        return std::move(input).map(std::forward<Func>(func));
     }
 
-    template<typename Func, typename Input>
-    static constexpr auto map(Func &&func, const T<Input> &input)
+    constexpr PartiallyApplicable(const T &t)
+        : T(t)
     {
-        return input.map(std::forward<Func>(func));
     }
 
-    template<typename Func, typename Input>
-        requires is_instance_v<T, Input>
-    static constexpr auto apply(T<Func> &&func, Input &&input)
+    template<typename Arg>
+    constexpr auto operator()(Arg &&arg) const
     {
-        return std::forward<Input>(input).apply(std::move(func));
+        return [this, forwarded_arg = std::forward<Arg>(arg)] <typename ...Args> (Args &&...args) mutable {
+            return T::operator()(std::move(forwarded_arg), std::forward<Args>(args)...);
+        };
     }
 
-    template<typename Func, typename Input>
-        requires is_instance_v<T, Input>
-    static constexpr auto apply(const T<Func> &func, Input &&input)
+    template<typename Arg>
+    constexpr auto operator()(Arg &&arg)
     {
-        return std::forward<Input>(input).apply(func);
-    }
-
-    template<typename Input>
-        requires is_instance_v<T, Input>
-    static constexpr auto join(T<Input> &&input)
-    {
-        return std::move(input).join();
-    }
-
-    template<typename Input>
-        requires is_instance_v<T, Input>
-    static constexpr auto join(const T<Input> &input)
-    {
-        return input.join();
+        return [this, forwarded_arg = std::forward<Arg>(arg)] <typename ...Args> (Args &&...args) mutable {
+            return T::operator()(std::move(forwarded_arg), std::forward<Args>(args)...);
+        };
     }
 };
 
-
-template<template<typename> typename T, typename Input>
-constexpr auto fpure(Input &&input)
-{
-    return T<std::remove_cvref_t<Input>>{std::forward<Input>(input)};
-}
-
-template<template<typename> typename T, typename Func, typename Input>
-constexpr auto fmap(Func &&func, T<Input> &&input)
-{
-    return FunctionalTraits<T>::map(std::forward<Func>(func), std::move(input));
-}
-
-template<template<typename> typename T, typename Func, typename Input>
-constexpr auto fmap(Func &&func, const T<Input> &input)
-{
-    return FunctionalTraits<T>::map(std::forward<Func>(func), input);
-}
-
-template<template<typename> typename T>
-concept Functor = requires(double (*func)(int), T<int> t) {
-    {fmap(func, t)} -> std::same_as<T<double>>;
-    {fpure<T>(0)} -> std::same_as<T<int>>;
-};
-
-template<template<typename> typename T, typename Func, typename Input>
-    requires is_instance_v<T, Input>
-constexpr auto fapply(T<Func> &&func, Input &&input)
-{
-    return FunctionalTraits<T>::apply(std::move(func), std::forward<Input>(input));
-}
-
-template<template<typename> typename T, typename Func, typename Input>
-    requires is_instance_v<T, Input>
-constexpr auto fapply(const T<Func> &func, Input &&input)
-{
-    return FunctionalTraits<T>::apply(func, std::forward<Input>(input));
-}
-
-template<template<typename> typename T>
-concept Applicative = Functor<T> && requires(T<double (*)(int)> func, T<int> t) {
-    {fapply(func, t)} -> std::same_as<T<double>>;
-};
-
-template<template<typename> typename T, typename Input>
-    requires is_instance_v<T, Input>
-constexpr auto fjoin(T<Input> &&input)
-{
-    return FunctionalTraits<T>::join(std::move(input));
-}
-
-template<template<typename> typename T, typename Input>
-    requires is_instance_v<T, Input>
-constexpr auto fjoin(const T<Input> &input)
-{
-    return FunctionalTraits<T>::join(input);
-}
-
-template<template<typename> typename T>
-concept Monad = Applicative<T> && requires(T<T<int>> t) {
-    {fjoin(t)} -> std::same_as<T<int>>;
-};
-
-template<template<typename> typename T, typename Func, typename Input>
-    requires is_instance_v<T, decltype(fmap(std::declval<Func>(), std::declval<T<Input> &&>()))>
-constexpr auto fbind(Func &&func, T<Input> &&input)
-{
-    return fjoin(fmap(std::forward<Func>(func), std::move(input)));
-}
-
-template<template<typename> typename T, typename Func, typename Input>
-    requires is_instance_v<T, decltype(fmap(std::declval<Func>(), std::declval<const T<Input> &>()))>
-constexpr auto fbind(Func &&func, const T<Input> &input)
-{
-    return fjoin(fmap(std::forward<Func>(func), input));
-}
-
-template<typename T, typename Func>
-constexpr auto operator>>(T &&value, Func &&func)
-{
-    return fbind(std::forward<Func>(func), std::forward<T>(value));
-}
+template<typename T>
+PartiallyApplicable(T &&t) -> PartiallyApplicable<std::remove_cvref_t<T>>;
+#endif
 
 } // namespace functional
 
-namespace test_functional {
+inline namespace
+{
+
+namespace test_functional
+{
 
 template<typename T>
 struct MyMonad final {
@@ -245,7 +152,7 @@ concept Printable = requires(T val, std::ostream &stream) {
 
 template<template<typename> typename Functor>
     requires Printable<Functor<int>> && functional::Functor<Functor>
-void functor_test() {
+static void functor_test() {
     using functional::fmap;
     using functional::fpure;
     std::cout << "Functor (" << typeid(Functor<int>).name() << ")\n";
@@ -255,7 +162,7 @@ void functor_test() {
 
 template<template<typename> typename Applicative>
     requires Printable<Applicative<int>> && functional::Applicative<Applicative>
-void applicative_test() {
+static void applicative_test() {
     using functional::fapply;
     using functional::fpure;
     std::cout << "Applicative (" << typeid(Applicative<int>).name() << ")\n";
@@ -264,7 +171,8 @@ void applicative_test() {
 
 template<template<typename> typename Monad>
     requires Printable<Monad<int>> && functional::Monad<Monad>
-void monad_test() {
+static void monad_test()
+{
     using functional::fjoin;
     using functional::fbind;
     using functional::fpure;
@@ -280,7 +188,8 @@ void monad_test() {
 }
 
 template<typename T>
-static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &value) {
+static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &value)
+{
     if (value) {
         stream << "std::optional{" << *value << "}";
     } else {
@@ -289,84 +198,7 @@ static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &va
     return stream;
 }
 
-namespace functional
-{
-
-template<>
-struct FunctionalTraits<std::optional> final
-{
-    template<typename Func, typename Input>
-    static constexpr auto map(Func &&func, std::optional<Input> &&input)
-    {
-        using functional::fpure;
-        using FuncRet = std::remove_cvref_t<decltype(std::forward<Func>(func)(std::move(*input)))>;
-        if (!input)
-        {
-            return std::optional<FuncRet>{};
-        }
-        return fpure<std::optional>(std::forward<Func>(func)(std::move(*input)));
-    }
-
-    template<typename Func, typename Input>
-    static constexpr auto map(Func &&func, const std::optional<Input> &input)
-    {
-        using functional::fpure;
-        using FuncRet = std::remove_cvref_t<decltype(std::forward<Func>(func)(*input))>;
-        if (!input)
-        {
-            return std::optional<FuncRet>{};
-        }
-        return fpure<std::optional>(std::forward<Func>(func)(*input));
-    }
-
-    template<typename Func, typename Input>
-        requires is_instance_v<std::optional, Input>
-    static constexpr auto apply(std::optional<Func> &&func, Input &&input)
-    {
-        using FuncRet = std::remove_cvref_t<decltype(map(std::move(*func), std::forward<Input>(input)))>;
-        if (!func)
-        {
-            return FuncRet{};
-        }
-        return map(std::move(*func), std::forward<Input>(input));
-    }
-
-    template<typename Func, typename Input>
-        requires is_instance_v<std::optional, Input>
-    static constexpr auto apply(const std::optional<Func> &func, Input &&input)
-    {
-        using FuncRet = std::remove_cvref_t<decltype(map(*func, std::forward<Input>(input)))>;
-        if (!func)
-        {
-            return FuncRet{};
-        }
-        return map(*func, std::forward<Input>(input));
-    }
-
-    template<typename Input>
-        requires is_instance_v<std::optional, Input>
-    static constexpr auto join(std::optional<Input> &&input)
-    {
-        if (!input)
-        {
-            return Input{};
-        }
-        return std::move(*input);
-    }
-
-    template<typename Input>
-        requires is_instance_v<std::optional, Input>
-    static constexpr auto join(const std::optional<Input> &input)
-    {
-        if (!input)
-        {
-            return Input{};
-        }
-        return *input;
-    }
-};
-
-} // namespace functional
+} // anonymous namespace
 
 int main()
 {
@@ -386,6 +218,15 @@ int main()
     functor_test<std::optional>();
     applicative_test<std::optional>();
     monad_test<std::optional>();
+
+    auto partial_test = [] (int a, int b) mutable {
+        return a * b;
+    };
+
+#if 0
+    auto partial_wrapped = functional::PartiallyApplicable(partial_test)(15);
+    std::cout << "partial_wrapped -> " << partial_wrapped(5) << '\n';
+#endif
 
     //map(convertt, a);
     return EXIT_SUCCESS;
