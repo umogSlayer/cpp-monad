@@ -15,41 +15,100 @@
 namespace functional
 {
 
-#if 0
-template<typename T>
-class PartiallyApplicable : public T
+template<typename T, typename ...Args>
+struct PartiallyApplicable : T
 {
-public:
-    constexpr PartiallyApplicable(T &&t)
+    constexpr PartiallyApplicable(T t, Args ...args) noexcept
         : T(std::move(t))
+        , saved_args_{std::move(args)...}
     {
     }
 
-    constexpr PartiallyApplicable(const T &t)
-        : T(t)
+    template<typename ...NonSavedArgs>
+        requires std::is_invocable_v<const T &, const Args &..., NonSavedArgs &&...>
+    constexpr auto operator()(NonSavedArgs &&...args) const &
     {
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return std::invoke(static_cast<const T &>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...);
+        }, std::index_sequence_for<Args...>{});
     }
 
-    template<typename Arg>
-    constexpr auto operator()(Arg &&arg) const
+    template<typename ...NonSavedArgs>
+        requires std::is_invocable_v<T &, Args &..., NonSavedArgs &&...>
+    constexpr auto operator()(NonSavedArgs &&...args) &
     {
-        return [this, forwarded_arg = std::forward<Arg>(arg)] <typename ...Args> (Args &&...args) mutable {
-            return T::operator()(std::move(forwarded_arg), std::forward<Args>(args)...);
-        };
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return std::invoke(static_cast<T &>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...);
+        }, std::index_sequence_for<Args...>{});
     }
 
-    template<typename Arg>
-    constexpr auto operator()(Arg &&arg)
+    template<typename ...NonSavedArgs>
+        requires std::is_invocable_v<T &&, Args &&..., NonSavedArgs &&...>
+    constexpr auto operator()(NonSavedArgs &&...args) &&
     {
-        return [this, forwarded_arg = std::forward<Arg>(arg)] <typename ...Args> (Args &&...args) mutable {
-            return T::operator()(std::move(forwarded_arg), std::forward<Args>(args)...);
-        };
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return std::invoke(static_cast<T &&>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...);
+        }, std::index_sequence_for<Args...>{});
     }
+
+    template<typename ...NonSavedArgs>
+        requires (!std::is_invocable_v<const T &, const Args &..., NonSavedArgs &&...>)
+    constexpr auto operator()(NonSavedArgs &&...args) const &
+    {
+        using RetType = PartiallyApplicable<T, Args..., std::remove_cvref_t<NonSavedArgs>...>;
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return RetType{static_cast<const T &>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...};
+        }, std::index_sequence_for<Args...>{});
+    }
+
+    template<typename ...NonSavedArgs>
+        requires (!std::is_invocable_v<T &, Args &..., NonSavedArgs &&...>)
+    constexpr auto operator()(NonSavedArgs &&...args) &
+    {
+        using RetType = PartiallyApplicable<T, Args..., std::remove_cvref_t<NonSavedArgs>...>;
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return RetType{static_cast<T &>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...};
+        }, std::index_sequence_for<Args...>{});
+    }
+
+    template<typename ...NonSavedArgs>
+        requires (!std::is_invocable_v<T &&, Args &&..., NonSavedArgs &&...>)
+    constexpr auto operator()(NonSavedArgs &&...args) &&
+    {
+        using RetType = PartiallyApplicable<T, Args..., std::remove_cvref_t<NonSavedArgs>...>;
+        return unpack_tuple([this, &args...] <typename ...TupleArgs> (TupleArgs &&...tuple_args) {
+            return RetType{static_cast<T &&>(*this), std::forward<TupleArgs>(tuple_args)..., std::forward<NonSavedArgs>(args)...};
+        }, std::index_sequence_for<Args...>{});
+    }
+
+private:
+    template<typename Callable, size_t ...Idx>
+    constexpr auto unpack_tuple(Callable &&callable, std::index_sequence<Idx...>) const &
+    {
+        return std::forward<Callable>(callable)(std::get<Idx>(saved_args_)...);
+    }
+
+    template<typename Callable, size_t ...Idx>
+    constexpr auto unpack_tuple(Callable &&callable, std::index_sequence<Idx...>) &
+    {
+        return std::forward<Callable>(callable)(std::get<Idx>(saved_args_)...);
+    }
+
+    template<typename Callable, size_t ...Idx>
+    constexpr auto unpack_tuple(Callable &&callable, std::index_sequence<Idx...>) &&
+    {
+        return std::forward<Callable>(callable)(std::get<Idx>(std::move(saved_args_))...);
+    }
+
+private:
+    std::tuple<Args...> saved_args_;
 };
 
 template<typename T>
-PartiallyApplicable(T &&t) -> PartiallyApplicable<std::remove_cvref_t<T>>;
-#endif
+constexpr PartiallyApplicable<std::remove_cvref_t<T>> partially_applicable(T &&t) noexcept
+{
+    return {t};
+}
 
 } // namespace functional
 
@@ -202,10 +261,6 @@ static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &va
 
 int main()
 {
-    const std::optional a{0};
-    const std::optional aa{0.0};
-    const auto aaa = std::optional{1ull};
-    const auto convertt = [] (int i) noexcept -> double { return i; };
     using namespace test_functional;
     functor_test<MyMonad>();
     applicative_test<MyMonad>();
@@ -219,15 +274,13 @@ int main()
     applicative_test<std::optional>();
     monad_test<std::optional>();
 
-    auto partial_test = [] (int a, int b) mutable {
-        return a * b;
+    constexpr auto partial_test = [] <typename A, typename B, typename C> (A a, B b, C c) {
+        return a * b + c;
     };
 
-#if 0
-    auto partial_wrapped = functional::PartiallyApplicable(partial_test)(15);
-    std::cout << "partial_wrapped -> " << partial_wrapped(5) << '\n';
-#endif
+    constexpr auto partial_wrapped = functional::partially_applicable(partial_test)(15);
+    std::cout << "partial_wrapped -> " << partial_wrapped(5., 1.f) << '\n';
+    std::cout << "partial_wrapped -> " << partial_wrapped(5.)(1.f) << '\n';
 
-    //map(convertt, a);
     return EXIT_SUCCESS;
 }
