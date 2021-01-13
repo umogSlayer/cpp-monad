@@ -1,5 +1,7 @@
 #include <iostream>
 
+#include "functional_applicative.hpp"
+#include "functional_functor.hpp"
 #include "functional_partially_applicable.hpp"
 #include "functional_monad.hpp"
 #include "functional_optional.hpp"
@@ -185,6 +187,17 @@ static void alternative_test()
     std::cout << "Alternate (operator, left empty): " << (fempty<Alternative, int>() | fpure<Alternative>(15)) << '\n';
 }
 
+struct OptionalResult final
+{
+    int x;
+    double y;
+
+    friend std::ostream &operator<<(std::ostream &stream, const OptionalResult &value)
+    {
+        return stream << "OptionalResult{" << value.x << ", " << value.y << "}";
+    }
+};
+
 template<typename T>
 static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &value)
 {
@@ -194,6 +207,34 @@ static std::ostream &operator<<(std::ostream &stream, const std::optional<T> &va
         stream << "std::nullopt";
     }
     return stream;
+}
+
+static void optional_test()
+{
+    using functional::fpure;
+    using functional::fempty;
+    using functional::fmap;
+    using functional::operator*;
+    using functional::operator|;
+    using functional::partially_applicable;
+    {
+        constexpr auto result =
+            fmap(partially_applicable([] (int a, double b) {
+                                          return OptionalResult{.x = a, .y = b};
+                                      }),
+                 fpure<std::optional>(12))
+            * fpure<std::optional>(5.0);
+        std::cout << result << '\n';
+    }
+    {
+        constexpr auto result =
+            fmap(partially_applicable([] (int a, double b) {
+                                          return OptionalResult{.x = a, .y = b};
+                                      }),
+                 fempty<std::optional, int>())
+            * fpure<std::optional>(5.0);
+        std::cout << result << '\n';
+    }
 }
 
 } // anonymous namespace
@@ -221,6 +262,8 @@ int main()
     constexpr auto partial_wrapped = functional::partially_applicable(partial_test)(15);
     std::cout << "partial_wrapped -> " << partial_wrapped(5., 1.f) << '\n';
     std::cout << "partial_wrapped -> " << partial_wrapped(5.)(1.f) << '\n';
+
+    optional_test();
 
     return EXIT_SUCCESS;
 }
