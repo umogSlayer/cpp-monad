@@ -20,8 +20,8 @@ constexpr auto fjoin(const T<Input> &input)
 }
 
 template<template<typename> typename T>
-concept Monad = Applicative<T> && requires(T<T<int>> t) {
-    {fjoin(t)} -> std::same_as<T<int>>;
+concept Monad = Applicative<T> && requires(T<T<detail::MoveOnlyData>> t) {
+    {fjoin(std::move(t))} -> std::same_as<T<detail::MoveOnlyData>>;
 };
 
 template<template<typename> typename T, typename Func, typename Input>

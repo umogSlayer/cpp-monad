@@ -79,6 +79,22 @@ struct FunctionalTraits<std::optional> final
         }
         return *input;
     }
+
+    template<typename InputLeft, typename InputRight>
+        requires std::same_as<std::optional<InputLeft>, std::remove_cvref_t<InputRight>>
+    static constexpr auto alternate(std::optional<InputLeft> &&lhs, InputRight &&rhs)
+    {
+        if (lhs) return std::move(lhs);
+        return std::forward<InputRight>(rhs);
+    }
+
+    template<typename InputLeft, typename InputRight>
+        requires std::same_as<std::optional<InputLeft>, std::remove_cvref_t<InputRight>>
+    static constexpr auto alternate(const std::optional<InputLeft> &lhs, InputRight &&rhs)
+    {
+        if (lhs) return lhs;
+        return std::forward<InputRight>(rhs);
+    }
 };
 
 } // namespace functional

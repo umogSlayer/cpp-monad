@@ -3,6 +3,7 @@
 #include "functional_partially_applicable.hpp"
 #include "functional_monad.hpp"
 #include "functional_optional.hpp"
+#include "functional_alternative.hpp"
 
 #include <functional>
 #include <type_traits>
@@ -81,17 +82,37 @@ struct MyMonadMethods final {
     T value;
 
     template<typename Func>
-    constexpr auto map(Func &&func) const {
+    constexpr auto map(Func &&func) const &
+    {
         return MyMonadMethods<decltype(std::forward<Func>(func)(value))>{std::forward<Func>(func)(value)};
     }
 
     template<typename Func>
-    constexpr auto apply(const MyMonadMethods<Func> &func) const {
+    constexpr auto map(Func &&func) &&
+    {
+        return MyMonadMethods<decltype(std::forward<Func>(func)(std::move(value)))>{std::forward<Func>(func)(std::move(value))};
+    }
+
+    template<typename Func>
+    constexpr auto apply(const MyMonadMethods<Func> &func) const &
+    {
         return MyMonadMethods<decltype(func.value(value))>{func.value(value)};
     }
 
-    constexpr auto join() const {
+    template<typename Func>
+    constexpr auto apply(const MyMonadMethods<Func> &func) &&
+    {
+        return MyMonadMethods<decltype(func.value(std::move(value)))>{func.value(std::move(value))};
+    }
+
+    constexpr auto join() const &
+    {
         return value;
+    }
+
+    constexpr auto join() &&
+    {
+        return std::move(value);
     }
 };
 
@@ -125,8 +146,10 @@ template<template<typename> typename Applicative>
 static void applicative_test() {
     using functional::fapply;
     using functional::fpure;
+    using functional::operator*;
     std::cout << "Applicative (" << typeid(Applicative<int>).name() << ")\n";
-    std::cout << "\tapply: " << fapply(Applicative{[] (int val) { return val * 0.5; }}, fpure<Applicative>(15)) << '\n';
+    std::cout << "\tapply: " << fapply(fpure<Applicative>([] (int val) { return val * 0.5; }), fpure<Applicative>(15)) << '\n';
+    std::cout << "\tapply (operator): " << (fpure<Applicative>([] (int val) { return val * 0.5; }) * fpure<Applicative>(15)) << '\n';
 }
 
 template<template<typename> typename Monad>
@@ -145,6 +168,21 @@ static void monad_test()
             >> [] (auto val) { return fpure<Monad>(val * 0.5); }
             >> [] (auto val) { return fpure<Monad>(static_cast<int>(val)); };
     std::cout << "\tchain: " << chain_result << '\n';
+}
+
+template<template<typename> typename Alternative>
+    requires Printable<Alternative<int>> && functional::Alternative<Alternative>
+static void alternative_test()
+{
+    using functional::fpure;
+    using functional::fempty;
+    using functional::falternate;
+    using functional::operator|;
+    std::cout << "Alternative (" << typeid(Alternative<int>).name() << ")\n";
+    std::cout << "Empty: " << fempty<Alternative, int>() << '\n';
+    std::cout << "Alternate (left empty): " << falternate(fempty<Alternative, int>(), fpure<Alternative>(15)) << '\n';
+    std::cout << "Alternate (right empty): " << falternate(fpure<Alternative>(15), fempty<Alternative, int>()) << '\n';
+    std::cout << "Alternate (operator, left empty): " << (fempty<Alternative, int>() | fpure<Alternative>(15)) << '\n';
 }
 
 template<typename T>
@@ -174,6 +212,7 @@ int main()
     functor_test<std::optional>();
     applicative_test<std::optional>();
     monad_test<std::optional>();
+    alternative_test<std::optional>();
 
     constexpr auto partial_test = [] <typename A, typename B, typename C> (A a, B b, C c) {
         return a * b + c;

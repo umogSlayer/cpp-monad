@@ -57,6 +57,12 @@ struct FunctionalTraits final
     {
         return input.join();
     }
+
+    template<typename Input>
+    static constexpr auto empty() noexcept
+    {
+        return T<Input>::empty();
+    }
 };
 
 } // namespace functional

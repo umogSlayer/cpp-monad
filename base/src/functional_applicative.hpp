@@ -20,8 +20,14 @@ constexpr auto fapply(const T<Func> &func, Input &&input)
 }
 
 template<template<typename> typename T>
-concept Applicative = Functor<T> && requires(T<double (*)(int)> func, T<int> t) {
-    {fapply(func, t)} -> std::same_as<T<double>>;
+concept Applicative = Functor<T> && requires(T<detail::MoveOnlyFunctionObject> func, T<detail::MoveOnlyData> t) {
+    {fapply(std::move(func), std::move(t))} -> std::same_as<T<detail::MoveOnlyResult>>;
 };
+
+template<typename Lhs, typename Rhs>
+constexpr auto operator*(Lhs &&lhs, Rhs &&rhs)
+{
+    return fapply(std::forward<Lhs>(lhs), std::forward<Rhs>(rhs));
+}
 
 } // namespace functional
