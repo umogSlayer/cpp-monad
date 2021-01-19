@@ -2,7 +2,9 @@
 
 #include "functional_applicative.hpp"
 #include "functional_alternative.hpp"
+#include "functional_traits.hpp"
 
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -27,13 +29,13 @@ struct JsonValue final
 template<typename Visitor>
 constexpr auto visit(Visitor &&visitor, JsonValue &&json_value)
 {
-    return std::visit(std::forward<Visitor>(visitor), std::move(json_value));
+    return std::visit(std::forward<Visitor>(visitor), std::move(json_value.value));
 }
 
 template<typename Visitor>
 constexpr auto visit(Visitor &&visitor, const JsonValue &json_value)
 {
-    return std::visit(std::forward<Visitor>(visitor), json_value);
+    return std::visit(std::forward<Visitor>(visitor), json_value.value);
 }
 
 struct ParseError final
@@ -89,6 +91,144 @@ struct Parser final
     std::string error_prefix;
     std::string error_suffix;
 };
+
+template<typename Func>
+    requires (std::is_invocable_v<const Func &, const JsonObject &>
+              && functional::is_instance_v<Parser, std::invoke_result_t<const Func &, const JsonObject &>>)
+consteval auto with_object(std::string_view class_name_sv, Func &&func)
+{
+    using RetVal = std::remove_cvref_t<std::invoke_result_t<const Func &, const JsonObject &>>;
+    return [forwarded_func = std::forward<Func>(func), class_name = class_name_sv] (const JsonValue &json_value) noexcept(std::is_nothrow_invocable_v<const Func &, const JsonObject &>) {
+        return visit(
+                overloaded([&class_name, &forwarded_func] (const JsonObject &json_object) {
+                               auto func_result = forwarded_func(json_object);
+                               using namespace std::literals;
+                               func_result.error_prefix = "When parsing JSON object for "s + std::string(class_name) + ": " + std::move(func_result.error_prefix);
+                               return func_result;
+                           },
+                           [&class_name] (const auto &) {
+                               return RetVal{ParseError{
+                                   "Expected JSON object for " + std::string(class_name)
+                               }};
+                           }),
+                json_value);
+    };
+}
+
+template<typename Func>
+    requires (std::is_invocable_v<const Func &, const JsonString &>
+              && functional::is_instance_v<Parser, std::invoke_result_t<const Func &, const JsonString &>>)
+consteval auto with_string(std::string_view class_name_sv, Func &&func)
+{
+    using RetVal = std::remove_cvref_t<std::invoke_result_t<const Func &, const JsonString &>>;
+    return [forwarded_func = std::forward<Func>(func), class_name = class_name_sv] (const JsonValue &json_value) noexcept(std::is_nothrow_invocable_v<const Func &, const JsonString &>) {
+        return visit(
+                overloaded([&class_name, &forwarded_func] (const JsonString &json_string) {
+                               auto func_result = forwarded_func(json_string);
+                               using namespace std::literals;
+                               func_result.error_prefix = "When parsing JSON string for "s + std::string(class_name) + ": " + std::move(func_result.error_prefix);
+                               return func_result;
+                           },
+                           [&class_name] (const auto &) {
+                               return RetVal{ParseError{
+                                   "Expected JSON string for " + std::string(class_name)
+                               }};
+                           }),
+                json_value);
+    };
+}
+
+template<typename Func>
+    requires (std::is_invocable_v<const Func &, const JsonList &>
+              && functional::is_instance_v<Parser, std::invoke_result_t<const Func &, const JsonList &>>)
+consteval auto with_list(std::string_view class_name_sv, Func &&func)
+{
+    using RetVal = std::remove_cvref_t<std::invoke_result_t<const Func &, const JsonList &>>;
+    return [forwarded_func = std::forward<Func>(func), class_name = class_name_sv] (const JsonValue &json_value) noexcept(std::is_nothrow_invocable_v<const Func &, const JsonList &>) {
+        return std::visit(
+                overloaded([&class_name, &forwarded_func] (const JsonList &json_list) {
+                               auto func_result = forwarded_func(json_list);
+                               using namespace std::literals;
+                               func_result.error_prefix = "When parsing JSON list for "s + std::string(class_name) + ": " + std::move(func_result.error_prefix);
+                               return func_result;
+                           },
+                           [&class_name] (const auto &) {
+                               return RetVal{ParseError{
+                                   "Expected JSON list for " + std::string(class_name)
+                               }};
+                           }),
+                json_value);
+    };
+}
+
+template<typename Func>
+    requires (std::is_invocable_v<const Func &, const JsonNumber &>
+              && functional::is_instance_v<Parser, std::invoke_result_t<const Func &, JsonNumber>>)
+consteval auto with_number(std::string_view class_name_sv, Func &&func)
+{
+    using RetVal = std::remove_cvref_t<std::invoke_result_t<const Func &, JsonNumber>>;
+    return [forwarded_func = std::forward<Func>(func), class_name = class_name_sv] (const JsonValue &json_value) noexcept(std::is_nothrow_invocable_v<const Func &, JsonNumber>) {
+        return visit(
+                overloaded([&class_name, &forwarded_func] (const JsonNumber json_number) {
+                               auto func_result = forwarded_func(json_number);
+                               using namespace std::literals;
+                               func_result.error_prefix = "When parsing JSON number for "s + std::string(class_name) + ": " + std::move(func_result.error_prefix);
+                               return func_result;
+                           },
+                           [&class_name] (const auto &) {
+                               return RetVal{ParseError{
+                                   "Expected JSON number for " + std::string(class_name)
+                               }};
+                           }),
+                json_value);
+    };
+}
+
+template<typename JsonType>
+constexpr auto json_type_parser()
+{
+    using namespace std::literals;
+    if constexpr (std::is_same_v<JsonType, JsonObject>)
+    {
+        return with_object("JsonObject"sv, [] (const JsonObject &value) {return functional::fpure<Parser>(value);});
+    }
+    else if constexpr (std::is_same_v<JsonType, JsonString>)
+    {
+        return with_string("JsonString"sv, [] (const JsonString &value) {return functional::fpure<Parser>(value);});
+    }
+    else if constexpr (std::is_same_v<JsonType, JsonList>)
+    {
+        return with_list("JsonList"sv, [] (const JsonList &value) {return functional::fpure<Parser>(value);});
+    }
+    else if constexpr (std::is_same_v<JsonType, JsonNumber>)
+    {
+        return with_number("JsonNumber"sv, [] (const JsonNumber value) {return functional::fpure<Parser>(value);});
+    }
+    else
+    {
+        struct InvalidType {};
+        return InvalidType{};
+    }
+}
+
+template<typename FieldType>
+constexpr Parser<FieldType> parse_field(const JsonObject &object, std::string_view field_name)
+{
+    using namespace std::literals;
+    const auto found_element = std::find_if(begin(object), end(object), [field_name] (const auto &field) {
+                                                return field.first == field_name;
+                                            });
+    if (found_element != end(object))
+    {
+        constexpr auto parser_func = json_type_parser<FieldType>();
+        auto func_result = parser_func(found_element->second);
+        func_result.error_prefix = "When parsing JSON object field \""s + std::string(field_name) + "\": " + std::move(func_result.error_prefix);
+        return func_result;
+    }
+    return Parser<FieldType>{ParseError{
+        "Expected JSON object field \""s + std::string(field_name) + "\""
+    }};
+}
 
 template<typename Func, typename T>
 constexpr auto fmap(Func &&func, Parser<T> &&value)
@@ -231,5 +371,27 @@ constexpr auto falternate(const Parser<InputValue> &lhs, InputWrapped &&rhs)
                        }),
             lhs.value);
 }
+
+inline namespace debug
+{
+
+template<typename T>
+std::ostream &operator<<(std::ostream &stream, const json::Parser<T> &value)
+{
+    std::visit(
+            json::overloaded([&] (const T &v) {
+                                 stream << "Parser{" << v << "}";
+                             },
+                             [&] (json::NotParsed) {
+                                 stream << "Parser{NotParsed}";
+                             },
+                             [&] (const json::ParseError &parse_error) {
+                                 stream << "Parser{ParseError{\"" << value.error_prefix << " " << parse_error.error_message << " " + value.error_suffix << "}}";
+                             }),
+            value.value);
+    return stream;
+}
+
+} // namespace debug
 
 } // namespace json

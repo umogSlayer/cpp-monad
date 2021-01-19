@@ -257,24 +257,52 @@ static void partially_applicable_test()
     std::cout << '\n';
 }
 
-template<typename T>
-static std::ostream &operator<<(std::ostream &stream, const json::Parser<T> &value)
+namespace json_test
 {
-    std::visit(
-            json::overloaded([&] (const T &v) {
-                                 stream << "Parser{" << v << "}";
-                             },
-                             [&] (json::NotParsed) {
-                                 stream << "NotParsed";
-                             },
-                             [&] (const json::ParseError &parse_error) {
-                                 stream << "ParseError{.error_prefix = \"" << value.error_prefix
-                                        << "\", .error_suffix = \"" << value.error_suffix
-                                        << "} error message: \"" << parse_error.error_message << "\"";
-                             }),
-            value.value);
+
+struct MyStruct final
+{
+    int a;
+    float b;
+};
+
+std::ostream &operator<<(std::ostream &stream, const MyStruct &val)
+{
+    std::cout << "MyStruct{" << val.a << ", " << val.b << "}";
     return stream;
 }
+
+json::Parser<MyStruct> parse_json(const json::JsonValue &json_value)
+{
+    using json::with_object;
+    using json::parse_field;
+    using json::JsonNumber;
+    using namespace std::literals;
+    constexpr auto parser = json::with_object(
+            "MyStruct"sv,
+            [] (const json::JsonObject &json_object) {
+                using namespace functional;
+                return fmap(partially_applicable([] (JsonNumber a, JsonNumber b) {
+                                                     return MyStruct{static_cast<int>(a), static_cast<float>(b)};
+                                                 }),
+                            parse_field<JsonNumber>(json_object, "a"sv))
+                    * parse_field<JsonNumber>(json_object, "b"sv);
+            });
+    return parser(json_value);
+}
+
+void test_json()
+{
+    const json::JsonValue value = {
+        json::JsonObject{
+            {"a", json::JsonValue{{12.0}}},
+            {"b", json::JsonValue{{12.0}}},
+        }
+    };
+    std::cout << parse_json(value) << '\n';
+}
+
+} // namespace json_test
 
 } // anonymous namespace
 
@@ -299,6 +327,7 @@ int main()
     alternative_test<json::Parser>();
 
     optional_test();
+    json_test::test_json();
 
     return EXIT_SUCCESS;
 }
