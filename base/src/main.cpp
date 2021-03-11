@@ -293,13 +293,11 @@ json::Parser<MyStruct> parse_json(const json::JsonValue &json_value)
 
 void test_json()
 {
-    const json::JsonValue value = {
-        json::JsonObject{
-            {"a", json::JsonValue{{12.0}}},
-            {"b", json::JsonValue{{12.0}}},
-        }
+    const json::JsonObject value = {
+        {"a", {12.0}},
+        {"b", {12.0}},
     };
-    std::cout << parse_json(value) << '\n';
+    std::cout << parse_json(json::JsonValue{value}) << '\n';
 }
 
 } // namespace json_test
